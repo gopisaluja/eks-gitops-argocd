@@ -1,0 +1,104 @@
+# Base values. Used as-is for dev; values-prod.yaml overlays them for prod.
+
+image:
+  repository: ghcr.io/stefanprodan/podinfo
+  # Defaults to .Chart.AppVersion. Prefer an immutable tag or digest per environment.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Used only when autoscaling.enabled=false; otherwise the HPA owns replicas.
+replicaCount: 2
+
+serviceAccount:
+  create: true
+  # Defaults to the fullname ("sample-api" for release "sample-api"), which is
+  # what the IRSA trust policy in infra/terraform/irsa.tf expects.
+  name: ""
+  # IAM role assumed by the pod via IRSA (terraform output irsa_role_arns.sample_api).
+  irsaRoleArn: arn:aws:iam::111122223333:role/eks-dev-sample-api
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+containerPort: 9898
+
+service:
+  type: ClusterIP
+  port: 80
+
+# Extra environment variables, e.g. [{name: PODINFO_UI_MESSAGE, value: "hello"}].
+env: []
+
+ingress:
+  enabled: false
+  className: nginx
+  host: sample-api.dev.example.com
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: sample-api-tls
+
+# No CPU limit on purpose: CFS throttling hurts latency more than it protects
+# neighbours when requests are set sensibly. Memory limit = OOM guardrail.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+probes:
+  startup:
+    path: /healthz
+    failureThreshold: 30
+    periodSeconds: 2
+  liveness:
+    path: /healthz
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    periodSeconds: 5
+    failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  # Set exactly one of minAvailable / maxUnavailable.
+  maxUnavailable: 1
+
+# Restricted Pod Security Standard compliant.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+terminationGracePeriodSeconds: 30
+
+# Spread replicas across zones (soft) and nodes (soft).
+topologySpread:
+  enabled: true
+
+nodeSelector:
+  workload-class: apps
+tolerations: []
+affinity: {}

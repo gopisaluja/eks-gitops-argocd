@@ -1,0 +1,60 @@
+# sample-api in every environment from the same chart; values.yaml is the
+# base (dev) and values-<env>.yaml overlays it. Same promotion model as the
+# platform: dev follows main, prod follows a release tag.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sample-api
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - env: dev
+            cluster: eks-dev
+            revision: main
+          - env: prod
+            cluster: eks-prod
+            revision: sample-api-v1.0.0
+  template:
+    metadata:
+      name: "sample-api-{{ .env }}"
+      labels:
+        env: "{{ .env }}"
+        layer: workloads
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: workloads
+      source:
+        repoURL: https://github.com/gopisaluja/eks-gitops-argocd.git
+        targetRevision: "{{ .revision }}"
+        path: charts/sample-api
+        helm:
+          releaseName: sample-api
+          valueFiles:
+            - "values-{{ .env }}.yaml"
+          # dev has no overlay file and runs on values.yaml alone.
+          ignoreMissingValueFiles: true
+      destination:
+        name: "{{ .cluster }}"
+        namespace: sample-api
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+        managedNamespaceMetadata:
+          labels:
+            pod-security.kubernetes.io/enforce: restricted
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

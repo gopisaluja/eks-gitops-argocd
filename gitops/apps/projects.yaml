@@ -1,0 +1,56 @@
+# AppProjects scope what each group of Applications may deploy and where.
+# Wave -2: projects must exist before any Application that references them.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  description: Cluster add-ons owned by the platform team
+  sourceRepos:
+    - https://github.com/gopisaluja/eks-gitops-argocd.git
+    - https://kubernetes.github.io/ingress-nginx
+    - https://charts.jetstack.io
+    - https://kubernetes-sigs.github.io/external-dns/
+    - https://kubernetes-sigs.github.io/metrics-server/
+    - https://prometheus-community.github.io/helm-charts
+  destinations:
+    # Per-env app-of-apps Applications are created in the Argo CD namespace.
+    - name: in-cluster
+      namespace: argocd
+    - name: eks-dev
+      namespace: "*"
+    - name: eks-prod
+      namespace: "*"
+  # Add-ons ship CRDs, ClusterRoles, webhooks, StorageClasses, ClusterIssuers.
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: workloads
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  description: Application workloads; namespaced resources only
+  sourceRepos:
+    - https://github.com/gopisaluja/eks-gitops-argocd.git
+  destinations:
+    - name: eks-dev
+      namespace: sample-api
+    - name: eks-prod
+      namespace: sample-api
+  # Only the Namespace itself (CreateNamespace=true); no CRDs, ClusterRoles, etc.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange

@@ -1,0 +1,39 @@
+# Terraform
+**/.terraform/*
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan
+tfplan
+
+# Helm
+charts/*/charts/
+charts/*/Chart.lock
+gitops/addons/charts/
+*.tgz
+
+# Rendered manifests from CI / local checks
+rendered/
+
+# Kubeconfigs and secrets that must never be committed
+kubeconfig*
+*.kubeconfig
+*.pem
+*.key
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

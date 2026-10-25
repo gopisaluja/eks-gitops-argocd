@@ -1,0 +1,30 @@
+# prod overlay for sample-api. Only differences from values.yaml belong here.
+
+image:
+  # Pinned explicitly in prod; bumped by PR as part of a release.
+  tag: "6.14.1"
+
+serviceAccount:
+  irsaRoleArn: arn:aws:iam::444455556666:role/eks-prod-sample-api
+
+ingress:
+  enabled: true
+  host: sample-api.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+    secretName: sample-api-tls
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65

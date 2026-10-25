@@ -1,0 +1,61 @@
+{{- if or (not .Values.env) (not .Values.cluster) }}
+{{- fail "env and cluster must be set (normally by the platform-addons ApplicationSet)" }}
+{{- end }}
+{{- range $name, $addon := .Values.addons }}
+{{- if $addon.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ printf "%s-%s" $name $.Values.env }}
+  namespace: argocd
+  labels:
+    env: {{ $.Values.env | quote }}
+    layer: platform
+    addon: {{ $name | quote }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $addon.syncWave | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    {{- if $addon.chart }}
+    repoURL: {{ $addon.repoURL }}
+    chart: {{ $addon.chart }}
+    targetRevision: {{ $addon.version | quote }}
+    helm:
+      releaseName: {{ $name }}
+      {{- with $addon.values }}
+      valuesObject:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- else }}
+    repoURL: {{ $.Values.repoURL }}
+    targetRevision: {{ $.Values.targetRevision | quote }}
+    path: {{ $addon.path }}
+    {{- end }}
+  destination:
+    name: {{ $.Values.cluster }}
+    namespace: {{ $addon.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      {{- range $addon.syncOptions }}
+      - {{ . }}
+      {{- end }}
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+  {{- with $addon.ignoreDifferences }}
+  ignoreDifferences:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

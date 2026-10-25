@@ -1,0 +1,67 @@
+# prod overlay: replicas and PDBs for controllers, longer retention.
+# Role ARNs come from `terraform output irsa_role_arns` (placeholder account ID).
+addons:
+  cert-manager:
+    values:
+      replicaCount: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+      webhook:
+        replicaCount: 2
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: arn:aws:iam::444455556666:role/eks-prod-cert-manager
+
+  metrics-server:
+    values:
+      replicas: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+  external-dns:
+    values:
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: arn:aws:iam::444455556666:role/eks-prod-external-dns
+      txtOwnerId: eks-prod
+      domainFilters:
+        - example.com
+      excludeDomains:
+        - dev.example.com
+      policy: upsert-only
+
+  ingress-nginx:
+    values:
+      controller:
+        replicaCount: 3
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+
+  kube-prometheus-stack:
+    values:
+      prometheus:
+        prometheusSpec:
+          replicas: 2
+          retention: 15d
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              memory: 8Gi
+          storageSpec:
+            volumeClaimTemplate:
+              spec:
+                resources:
+                  requests:
+                    storage: 100Gi
+      alertmanager:
+        alertmanagerSpec:
+          replicas: 2

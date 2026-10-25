@@ -1,0 +1,31 @@
+# Root of the app-of-apps tree. Applied once by hand:
+#   kubectl apply -n argocd -f gitops/bootstrap/root-app.yaml
+#
+# It syncs gitops/apps/, which holds the AppProjects and the ApplicationSets
+# that generate every other Application.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  # Deliberately no resources finalizer: deleting the root Application must
+  # never cascade into deleting every add-on and workload.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/gopisaluja/eks-gitops-argocd.git
+    targetRevision: main
+    path: gitops/apps
+  destination:
+    name: in-cluster
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

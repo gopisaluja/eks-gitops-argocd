@@ -1,0 +1,109 @@
+# Helm values for the Argo CD control plane (argo/argo-cd chart).
+#
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argocd argo/argo-cd --version 10.9.6 \
+#     --namespace argocd --create-namespace \
+#     -f gitops/bootstrap/argocd-values.yaml
+#
+# This is the only imperative step. After the root Application is applied,
+# everything else (including later changes to Argo CD itself, if you add it as
+# an Application) is reconciled from Git.
+
+global:
+  domain: argocd.example.com
+
+configs:
+  params:
+    # TLS is terminated at the ingress controller once it exists.
+    server.insecure: true
+
+  cm:
+    # Argo CD does not assess the health of child Application resources by
+    # default. Restoring this check makes sync waves in an app-of-apps wait
+    # until the previous wave's Applications are Healthy, so cert-manager's
+    # webhook is serving before ClusterIssuers are applied, CRDs exist before
+    # ServiceMonitors, and so on.
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil then
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          if obj.status.health.message ~= nil then
+            hs.message = obj.status.health.message
+          end
+        end
+      end
+      return hs
+
+    # Disable the web terminal; debugging goes through kubectl with audited IAM access.
+    exec.enabled: "false"
+
+    # SSO goes here (OIDC against your IdP), e.g.:
+    # oidc.config: |
+    #   name: SSO
+    #   issuer: https://idp.example.com
+    #   clientID: argocd
+    #   clientSecret: $oidc.clientSecret
+    #   requestedScopes: ["openid", "profile", "email", "groups"]
+
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      g, platform-admins, role:admin
+    scopes: "[groups]"
+
+# Argo CD reaches the dev/prod clusters with IAM (awsAuthConfig in the cluster
+# secrets), so the controller and server need an IAM identity of their own.
+controller:
+  replicas: 1
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::777788889999:role/eks-mgmt-argocd
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+
+server:
+  replicas: 2
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::777788889999:role/eks-mgmt-argocd
+  # Enable once ingress-nginx and cert-manager are running. Until then use:
+  #   kubectl -n argocd port-forward svc/argocd-server 8080:80
+  ingress:
+    enabled: false
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls: true
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+repoServer:
+  replicas: 2
+  pdb:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+applicationSet:
+  replicas: 1
+
+# Single Redis is fine for a small control plane; switch to redis-ha for larger fleets.
+redis-ha:
+  enabled: false
+
+# SSO is configured directly via OIDC (configs.cm.oidc.config), so Dex is not needed.
+dex:
+  enabled: false

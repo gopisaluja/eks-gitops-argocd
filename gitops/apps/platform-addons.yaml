@@ -1,0 +1,60 @@
+# One app-of-apps Application per environment ("addons-dev", "addons-prod").
+# Each renders the gitops/addons Helm chart, which emits one Application per
+# add-on with its pinned chart version, sync wave and env-specific values.
+#
+# Promotion: dev tracks main; prod tracks an immutable tag. Promoting platform
+# changes to prod means moving the prod "revision" below to a newer tag via PR.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-addons
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - env: dev
+            cluster: eks-dev
+            revision: main
+          - env: prod
+            cluster: eks-prod
+            revision: platform-v1.0.0
+  # Removing an element must not tear down a whole environment's add-ons.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: "addons-{{ .env }}"
+      labels:
+        env: "{{ .env }}"
+        layer: platform
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/gopisaluja/eks-gitops-argocd.git
+        targetRevision: "{{ .revision }}"
+        path: gitops/addons
+        helm:
+          valueFiles:
+            - "values-{{ .env }}.yaml"
+          valuesObject:
+            env: "{{ .env }}"
+            cluster: "{{ .cluster }}"
+            targetRevision: "{{ .revision }}"
+      destination:
+        name: in-cluster
+        namespace: argocd
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

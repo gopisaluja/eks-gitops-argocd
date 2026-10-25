@@ -1,0 +1,106 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.15.6"
+  HELM_VERSION: "v3.21.4"
+  KUBECONFORM_VERSION: "v0.8.0"
+  KUBERNETES_VERSION: "1.35.0"
+  ARGOCD_CHART_VERSION: "10.9.6"
+
+jobs:
+  terraform:
+    name: terraform fmt / validate
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        working-directory: .
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
+
+  manifests:
+    name: helm lint / template / kubeconform
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          base="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "${base}/kubeconform-linux-amd64.tar.gz"
+          curl -sSfLO "${base}/CHECKSUMS"
+          grep ' kubeconform-linux-amd64.tar.gz$' CHECKSUMS | sha256sum -c -
+          sudo tar -xzf kubeconform-linux-amd64.tar.gz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: helm lint
+        run: |
+          helm lint --strict charts/sample-api
+          helm lint --strict charts/sample-api -f charts/sample-api/values-prod.yaml
+          for env in dev prod; do
+            helm lint --strict gitops/addons -f "gitops/addons/values-${env}.yaml" \
+              --set "env=${env},cluster=eks-${env}"
+          done
+
+      - name: helm template
+        run: |
+          mkdir -p rendered
+          kv="--kube-version=${KUBERNETES_VERSION}"
+          helm template sample-api charts/sample-api -n sample-api "$kv" \
+            > rendered/sample-api-dev.yaml
+          helm template sample-api charts/sample-api -n sample-api "$kv" \
+            -f charts/sample-api/values-prod.yaml > rendered/sample-api-prod.yaml
+          for env in dev prod; do
+            helm template addons gitops/addons "$kv" -f "gitops/addons/values-${env}.yaml" \
+              --set "env=${env},cluster=eks-${env},targetRevision=main" > "rendered/addons-${env}.yaml"
+          done
+          # Bootstrap values rendered against the pinned Argo CD chart.
+          helm template argocd argo-cd --repo https://argoproj.github.io/argo-helm \
+            --version "${ARGOCD_CHART_VERSION}" -n argocd "$kv" \
+            -f gitops/bootstrap/argocd-values.yaml > rendered/argocd.yaml
+
+      # CustomResourceDefinition objects (from the Argo CD chart) have no published
+      # JSON schema; custom resources themselves are validated via the CRDs catalog.
+      - name: kubeconform
+        run: |
+          kubeconform -strict -summary -output text \
+            -skip CustomResourceDefinition \
+            -kubernetes-version "${KUBERNETES_VERSION}" \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered/ \
+            gitops/apps/ \
+            gitops/platform-config/ \
+            gitops/bootstrap/root-app.yaml \
+            gitops/bootstrap/cluster-secret.example.yaml

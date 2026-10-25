@@ -1,0 +1,36 @@
+# dev overlay: small footprint, single replicas, short retention.
+# Role ARNs come from `terraform output irsa_role_arns` (placeholder account ID).
+addons:
+  cert-manager:
+    values:
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/eks-dev-cert-manager
+
+  external-dns:
+    values:
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/eks-dev-external-dns
+      txtOwnerId: eks-dev
+      domainFilters:
+        - dev.example.com
+      # dev may delete records it owns; prod stays upsert-only.
+      policy: sync
+
+  ingress-nginx:
+    values:
+      controller:
+        replicaCount: 1
+
+  kube-prometheus-stack:
+    values:
+      prometheus:
+        prometheusSpec:
+          retention: 3d
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              memory: 2Gi

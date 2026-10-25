@@ -1,0 +1,47 @@
+# Copy to terraform.tfvars (git-ignored) or to <env>.tfvars and pass with -var-file.
+# All IDs below are placeholders.
+
+region      = "us-east-1"
+environment = "dev"
+team        = "platform"
+cost_center = "cc-1234"
+
+extra_tags = {
+  repo = "eks-gitops-argocd"
+}
+
+cluster_version = "1.35"
+vpc_cidr        = "10.20.0.0/16"
+az_count        = 3
+
+# dev: one NAT gateway. prod: set to false for one NAT gateway per AZ.
+single_nat_gateway = true
+
+# Restrict to VPN / office egress ranges.
+cluster_endpoint_public_access       = true
+cluster_endpoint_public_access_cidrs = ["203.0.113.0/24"]
+
+cluster_admin_role_arns = {
+  sso-admins = "arn:aws:iam::111122223333:role/AWSReservedSSO_AdministratorAccess_0123456789abcdef"
+  argocd     = "arn:aws:iam::111122223333:role/argocd-deployer"
+}
+
+system_node_group = {
+  instance_types = ["m6i.large"]
+  min_size       = 2
+  max_size       = 3
+  desired_size   = 2
+}
+
+# prod: capacity_type = "ON_DEMAND" and a higher min_size.
+apps_node_group = {
+  instance_types = ["m6i.large", "m6a.large", "m5.large"]
+  capacity_type  = "SPOT"
+  min_size       = 1
+  max_size       = 4
+  desired_size   = 2
+}
+
+route53_zone_arns = [
+  "arn:aws:route53:::hostedzone/Z0123456789EXAMPLE",
+]

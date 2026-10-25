@@ -1,0 +1,46 @@
+# Cluster-wide configuration that depends on add-on CRDs/drivers being present.
+# Synced by the "platform-config-<env>" Application at wave 1.
+
+# gp3 StorageClass backed by the aws-ebs-csi-driver EKS add-on. Not marked as
+# default to avoid two defaults alongside EKS's gp2; consumers reference it by name.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+---
+# ACME issuers using DNS-01 against Route 53. cert-manager authenticates with
+# its IRSA role (ambient credentials), so no AWS keys are stored in the cluster.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: platform-team@example.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - dns01:
+          route53: {}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: platform-team@example.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - dns01:
+          route53: {}
